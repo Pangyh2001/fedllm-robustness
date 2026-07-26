@@ -1,0 +1,58 @@
+seed: 42
+output_dir: outputs/smoke
+run_name: smoke
+device: cuda
+
+data:
+  name: agnews
+  cache_dir: /home/yhpang/.cache/huggingface/datasets
+  max_train_samples: 400
+  max_test_samples: 200
+  max_length: 64
+  num_clients: 2
+  dirichlet_alpha: 0.5
+  partition_mode: label_skew_equal
+  val_fraction: 0.1
+  min_client_samples: 32
+  min_client_test_samples: 50
+
+model:
+  name_or_path: /data/yhpang/model_weights/qwen2_5_0_5b_instruct
+  lora_rank: 4
+  lora_alpha: 8
+  lora_dropout: 0.0
+  target_modules: [q_proj, v_proj]
+  dtype: bfloat16
+
+attack:
+  epsilon: 0.03
+  epsilon_mode: relative_rms
+  train_steps: 1
+  eval_steps: [1]
+  eval_restarts: 1
+  random_start: false
+
+federated:
+  algorithm: fedeat_tail
+  rounds: 1
+  local_epochs: 1
+  batch_size: 8
+  eval_batch_size: 16
+  learning_rate: 0.0002
+  client_fraction: 1.0
+  adv_weight: 0.3
+  clean_consistency_weight: 0.1
+  calfat_tau: 0.1
+  sfat_top_k: 1
+  sfat_multiplier: 1.4
+  qfed_q: 1.0
+  warmup_rounds: 0
+  residual_weight: 1.0
+  residual_ema: 0.0
+  vulnerability_ema: 0.9
+  tail_ratio: 0.5
+  tail_reweight: 2.0
+  qp_rho: 10.0
+  qp_kappa: 0.1
+  evaluate_every: 1
+  max_eval_batches: 1

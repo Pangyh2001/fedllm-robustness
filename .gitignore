@@ -1,0 +1,48 @@
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.env
+
+# Editors and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local datasets and model artifacts
+dataset/
+datasets/
+models/
+model_weights/
+*.bin
+*.pt
+*.pth
+*.safetensors
+
+# Experiment outputs and runtime files
+output/
+outputs/
+experiments*/
+run_logs/
+logs/
+checkpoints/
+wandb/
+*.log
+*.pid
+*.npy
+
+# Papers and local working documents
+paper/
+*.pdf
+*.docx
+*.tex
+
+# Refactor backups and local staging
+.legacy_source_*/
+.refactor_staging_*/
+REFACTOR_README.md
