@@ -38,26 +38,18 @@ smoke test 只使用很少的数据和一个通信轮次，用来检查代码、
 
 ---
 
-## 2. 登录服务器并进入目录
+## 2. 进入项目目录
 
-在本地终端运行：
-
-```bash
-ssh A100
-```
-
-登录后进入项目目录：
+服务器连接方式已经单独提供，本手册不重复服务器名称或登录命令。登录后进入
+你实际存放本仓库的目录，例如：
 
 ```bash
-cd /home/yhpang/fedllm-robustness
+cd /path/to/fedllm-robustness
 pwd
 ```
 
-正常情况下，`pwd` 应输出：
-
-```text
-/home/yhpang/fedllm-robustness
-```
+将 `/path/to` 换成实际路径。`pwd` 输出的最后一级目录应当是
+`fedllm-robustness`。
 
 查看项目文件：
 
@@ -82,10 +74,26 @@ tests/
 
 ## 3. 检查 Python 环境
 
-项目统一使用：
+先激活已经为本项目准备好的 Python 环境，然后设置：
 
 ```bash
-export PYTHON_BIN=/data/yhpang/miniconda3/envs/fedllm/bin/python3.12
+export PYTHON_BIN=python
+```
+
+如果还没有环境，可以创建一个独立环境：
+
+```bash
+conda create -n fedrda python=3.12 -y
+conda activate fedrda
+export PYTHON_BIN=python
+```
+
+先按照所在服务器的 CUDA 版本安装对应的 PyTorch。不同服务器的 CUDA 驱动可能
+不同，所以本手册不提供固定的 PyTorch 安装命令。确认 PyTorch 可用后安装其余
+依赖：
+
+```bash
+$PYTHON_BIN -m pip install -r requirements.txt
 ```
 
 检查 Python：
@@ -108,17 +116,16 @@ environment ok
 
 说明环境可用。
 
-如果出现 `ModuleNotFoundError`，先把完整报错保存下来，不要自己升级
-PyTorch、Transformers 或 CUDA。服务器当前的 `fedllm` 环境已经配置好核心依赖，
-随意升级很容易破坏版本匹配。把下面两条命令的输出发给项目负责人：
+如果出现 `ModuleNotFoundError`，先执行：
 
 ```bash
 $PYTHON_BIN --version
 $PYTHON_BIN -c "import torch, transformers, peft, datasets, scipy; print('environment ok')"
 ```
 
-`requirements.txt` 只记录项目的 Python 依赖，不负责更换服务器的
-PyTorch/Transformers/CUDA 组合。
+把完整报错和上述输出发给项目负责人。不要直接运行
+`pip install -U torch`，否则可能把服务器原本匹配的 PyTorch/CUDA 组合破坏。
+`requirements.txt` 不安装 PyTorch，PyTorch 必须根据实际 CUDA 环境单独安装。
 
 离散文本攻击另外需要 TextAttack。安装前先检查：
 
@@ -253,7 +260,8 @@ smoke test 不能证明：
 
 ### model 部分
 
-- `name_or_path`：服务器模型路径。
+- `name_or_path`：默认是 Hugging Face 模型名。服务器能够联网时会自动下载；
+  如果模型权重已经存放在本地，把它改成该服务器上的实际绝对路径。
 - `lora_rank`：LoRA rank。
 - `target_modules`：插入 LoRA 的注意力模块。
 - `dtype: bfloat16`：使用 BF16。
@@ -333,7 +341,7 @@ ps -fp "$(cat run_logs/agnews_alpha01__fedavg__seed42.pid)"
 同一张 GPU 上不要并行塞入所有方法。使用脚本顺序执行：
 
 ```bash
-export PYTHON_BIN=/data/yhpang/miniconda3/envs/fedllm/bin/python3.12
+export PYTHON_BIN=python
 export SEEDS="42 43 44"
 export METHODS="fedavg fedpgd calfat sfat qfedavg_eat fedrda"
 export SUITE_NAME="agnews_alpha01"

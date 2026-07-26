@@ -2,12 +2,12 @@ numpy
 scipy
 peft
 accelerate
+transformers>=4.46,<6
 datasets
 sentencepiece
 safetensors
 scikit-learn
 PyYAML
-# PyTorch and Transformers are provided by the server CUDA environment.
-# Do not upgrade them implicitly from this file.
+# Install the CUDA-compatible PyTorch build separately before this file.
 # Optional for BERT-Attack and DeepWordBug:
 # textattack

@@ -26,7 +26,7 @@ class DataConfig:
 
 @dataclass
 class ModelConfig:
-    name_or_path: str = "/data/yhpang/model_weights/qwen2_5_3b_instruct"
+    name_or_path: str = "Qwen/Qwen2.5-3B-Instruct"
     lora_rank: int = 8
     lora_alpha: int = 16
     lora_dropout: float = 0.05

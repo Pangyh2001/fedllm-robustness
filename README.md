@@ -44,7 +44,7 @@ CalFAT、SFAT 和 q-FedAvg 原本不是联邦大模型方法；本仓库只将�
 ## 环境
 
 ```bash
-cd /home/yhpang/fedllm-robustness
+cd /path/to/fedllm-robustness
 pip install -r requirements.txt
 ```
 
@@ -110,7 +110,7 @@ outputs/<model-and-dataset>/<run-name>__<algorithm>__seed<seed>/
 更新实验报告中的结果表：
 
 ```bash
-/data/yhpang/miniconda3/envs/fedllm/bin/python3.12 scripts/update_experiment_report.py \
+python scripts/update_experiment_report.py \
   --outputs outputs \
   --report EXPERIMENTS.md
 ```
@@ -118,7 +118,7 @@ outputs/<model-and-dataset>/<run-name>__<algorithm>__seed<seed>/
 ## 测试
 
 ```bash
-/data/yhpang/miniconda3/envs/fedllm/bin/python3.12 -m unittest discover -s tests -v
+python -m unittest discover -s tests -v
 ```
 
 ## 结果解释原则
