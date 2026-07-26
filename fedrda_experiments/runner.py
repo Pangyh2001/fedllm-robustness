@@ -32,8 +32,7 @@ SUPPORTED_ALGORITHMS = {
     "calfat",
     "sfat",
     "qfedavg_eat",
-    "fedeat",
-    "fedeat_tail",
+    "fedrda",
 }
 
 
@@ -196,7 +195,7 @@ class ExperimentRunner:
         for round_index in range(self.start_round, cfg.rounds):
             round_started = time.perf_counter()
             load_trainable_state(self.model, self.global_state)
-            if cfg.algorithm == "fedeat_tail":
+            if cfg.algorithm == "fedrda":
                 raw_vulnerability, validation_metrics = self._validation_vulnerability()
                 tail_ids = select_tail_clients(
                     self.vulnerability_ema, self.cfg.federated.tail_ratio
@@ -218,7 +217,7 @@ class ExperimentRunner:
                 clean_update = None
                 robust_update = None
                 client_record = {"client_id": client.client_id}
-                if cfg.algorithm == "fedeat_tail":
+                if cfg.algorithm == "fedrda":
                     clean_update, metrics = local_update(
                         self.model,
                         client.train,
@@ -250,7 +249,6 @@ class ExperimentRunner:
                         "calfat": "calfat",
                         "sfat": "pgd",
                         "qfedavg_eat": "eat",
-                        "fedeat": "eat",
                     }[cfg.algorithm]
                     if cfg.algorithm == "qfedavg_eat":
                         qloss = evaluate_objective_loss(
@@ -280,7 +278,7 @@ class ExperimentRunner:
                     )
                     single_updates.append(robust_update)
                     client_record["local_update"] = metrics
-                if cfg.algorithm == "fedeat_tail":
+                if cfg.algorithm == "fedrda":
                     residual = {
                         name: robust_update[name] - clean_update[name]
                         for name in clean_update
@@ -323,7 +321,7 @@ class ExperimentRunner:
                 aggregation_metrics.update(
                     {"aggregator": "qfedavg", **qfed_metrics}
                 )
-            elif cfg.algorithm != "fedeat_tail":
+            elif cfg.algorithm != "fedrda":
                 global_update = weighted_sum(single_updates, weights)
                 aggregation_metrics["aggregator"] = "sample_weighted_average"
             else:

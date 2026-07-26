@@ -15,7 +15,7 @@
 例如：
 
 ```text
-Qwen2.5-3B + AG News + alpha=0.1 + FedEAT-Tail + seed=42
+Qwen2.5-3B + AG News + alpha=0.1 + FedRDA + seed=42
 ```
 
 这是一个 run。把 seed 换成 43，就是另一个独立 run。
@@ -183,7 +183,7 @@ $PYTHON_BIN -m unittest discover -s tests -v
 ### 6.1 逐个检查所有方法
 
 ```bash
-for method in fedavg fedpgd calfat sfat qfedavg_eat fedeat fedeat_tail; do
+for method in fedavg fedpgd calfat sfat qfedavg_eat fedrda; do
   $PYTHON_BIN run_experiment.py \
     --config configs/smoke.yaml \
     --algorithm "$method" \
@@ -269,7 +269,7 @@ smoke test 不能证明：
 
 - `rounds: 50`：通信轮数。
 - `algorithm`：默认方法，可被命令行覆盖。
-- `adv_weight`：FedEAT 中对抗损失权重。
+- `adv_weight`：本地鲁棒目标中的对抗损失权重。
 - `clean_consistency_weight`：clean—adversarial 一致性权重。
 - `tail_ratio: 0.2`：最差 20% 客户端视为 tail clients。
 - `evaluate_every: 5`：每五轮完整评估一次。
@@ -286,9 +286,8 @@ smoke test 不能证明：
 - `fedpgd`：标准 embedding PGD 联邦对抗训练。
 - `calfat`：处理 label-skew 的校准对抗训练。
 - `sfat`：处理对抗训练加剧的客户端异构性。
-- `qfedavg_eat`：普通客户端公平优化与 FedEAT 的组合。
-- `fedeat`：FedEAT-base，优化平均鲁棒性与 clean performance。
-- `fedeat_tail`：完整方法，增加尾部客户端鲁棒性保护。
+- `qfedavg_eat`：q-FedAvg 客户端公平优化与 EAT 鲁棒目标的组合。
+- `fedrda`：完整方法，同时优化平均鲁棒性、尾部客户端鲁棒性和 clean performance。
 
 ### 8.2 推荐的后台运行方式
 
@@ -336,7 +335,7 @@ ps -fp "$(cat run_logs/agnews_alpha01__fedavg__seed42.pid)"
 ```bash
 export PYTHON_BIN=/data/yhpang/miniconda3/envs/fedllm/bin/python3.12
 export SEEDS="42 43 44"
-export METHODS="fedavg fedpgd calfat sfat qfedavg_eat fedeat fedeat_tail"
+export METHODS="fedavg fedpgd calfat sfat qfedavg_eat fedrda"
 export SUITE_NAME="agnews_alpha01"
 
 nohup bash scripts/run_suite.sh configs/agnews_qwen3b.yaml 0 \
@@ -369,8 +368,8 @@ find outputs/agnews_qwen3b -name summary.json | wc -l
 
 ### 8.5 这个实验回答什么
 
-1. FedEAT 是否比普通 FedPGD 更好地保持 clean performance？
-2. FedEAT 平均鲁棒性提高后，是否仍有部分客户端接近失效？
+1. 普通 FedPGD 在提高平均鲁棒性时是否损害 clean performance？
+2. 现有 baseline 的平均鲁棒性提高后，是否仍有部分客户端接近失效？
 3. CalFAT、SFAT 和 q-FedAvg-EAT 能否解决尾部客户端问题？
 4. 完整方法是否在不降低平均鲁棒性的情况下提高 bottom-20% 和 worst-client？
 
@@ -389,7 +388,7 @@ find outputs/agnews_qwen3b -name summary.json | wc -l
 ```bash
 $PYTHON_BIN run_experiment.py \
   --config configs/agnews_qwen3b.yaml \
-  --algorithm fedeat \
+  --algorithm fedrda \
   --seed 42 \
   --dirichlet-alpha 1.0 \
   --run-name agnews_alpha10
@@ -398,7 +397,7 @@ $PYTHON_BIN run_experiment.py \
 至少比较：
 
 ```text
-fedpgd、fedeat、fedeat_tail
+fedpgd、sfat、fedrda
 ```
 
 每个 alpha 使用相同的 seed 42、43、44。
@@ -419,7 +418,7 @@ fedpgd、fedeat、fedeat_tail
 
 ```bash
 export SEEDS="42 43 44"
-export METHODS="fedavg fedpgd calfat sfat qfedavg_eat fedeat fedeat_tail"
+export METHODS="fedavg fedpgd calfat sfat qfedavg_eat fedrda"
 export SUITE_NAME="dbpedia_alpha01"
 
 nohup bash scripts/run_suite.sh configs/dbpedia_qwen3b.yaml 0 \
@@ -442,7 +441,7 @@ nohup bash scripts/run_suite.sh configs/dbpedia_qwen3b.yaml 0 \
 
 ```bash
 export SEEDS="42 43 44"
-export METHODS="fedavg fedpgd sfat qfedavg_eat fedeat fedeat_tail"
+export METHODS="fedavg fedpgd sfat qfedavg_eat fedrda"
 export SUITE_NAME="agnews_alpha01"
 
 nohup bash scripts/run_suite.sh configs/agnews_qwen7b.yaml 0 \
@@ -475,7 +474,7 @@ embedding PGD 是连续空间代理攻击。真实用户输入的是 token，因
 ```bash
 $PYTHON_BIN evaluate_text_attacks.py \
   --config configs/agnews_qwen3b.yaml \
-  --run-dir outputs/agnews_qwen3b/agnews_alpha01__fedeat_tail__seed42 \
+  --run-dir outputs/agnews_qwen3b/agnews_alpha01__fedrda__seed42 \
   --attacks bert_attack deepwordbug \
   --num-examples-per-client 20 \
   --query-budget 1000 \
@@ -489,7 +488,7 @@ $PYTHON_BIN evaluate_text_attacks.py \
 ```bash
 $PYTHON_BIN evaluate_text_attacks.py \
   --config configs/agnews_qwen3b.yaml \
-  --run-dir outputs/agnews_qwen3b/agnews_alpha01__fedeat_tail__seed42 \
+  --run-dir outputs/agnews_qwen3b/agnews_alpha01__fedrda__seed42 \
   --attacks bert_attack deepwordbug \
   --num-examples-per-client -1 \
   --query-budget 1000 \
@@ -499,7 +498,7 @@ $PYTHON_BIN evaluate_text_attacks.py \
 至少对以下最终模型分别运行：
 
 ```text
-FedAvg、FedPGD、SFAT、FedEAT-base、FedEAT-Tail
+FedAvg、FedPGD、CalFAT、SFAT、q-FedAvg-EAT、FedRDA
 ```
 
 每个模型必须重新生成攻击样本。不能只攻击 FedAvg，再把相同样本拿去测试所有方法。
@@ -521,7 +520,7 @@ FedAvg、FedPGD、SFAT、FedEAT-base、FedEAT-Tail
 ```bash
 $PYTHON_BIN run_experiment.py \
   --config configs/agnews_qwen3b.yaml \
-  --algorithm fedeat_tail \
+  --algorithm fedrda \
   --seed 42 \
   --clean-consistency-weight 0 \
   --run-name ablation_no_consistency
@@ -590,7 +589,7 @@ ablation_no_tail
 ```bash
 $PYTHON_BIN run_experiment.py \
   --config configs/agnews_qwen3b.yaml \
-  --algorithm fedeat_tail \
+  --algorithm fedrda \
   --seed 42 \
   --run-name agnews_alpha01 \
   --resume
@@ -607,7 +606,7 @@ $PYTHON_BIN run_experiment.py \
 一个完整 run 的目录结构如下：
 
 ```text
-outputs/agnews_qwen3b/agnews_alpha01__fedeat_tail__seed42/
+outputs/agnews_qwen3b/agnews_alpha01__fedrda__seed42/
 ├── resolved_config.json
 ├── data_split.json
 ├── round_metrics.jsonl
@@ -697,9 +696,9 @@ outputs/agnews_qwen3b/agnews_alpha01__fedeat_tail__seed42/
 
 以下情况支持论文主张：
 
-1. FedEAT-Tail 的 robust macro 不低于最强 baseline；
-2. bottom-20% 和 worst-client 稳定高于 FedEAT-base、SFAT 和 q-FedAvg-EAT；
-3. clean macro 与 FedEAT-base 接近；
+1. FedRDA 的 robust macro 不低于最强 baseline；
+2. bottom-20% 和 worst-client 稳定高于 SFAT 和 q-FedAvg-EAT；
+3. clean macro 与 FedAvg 和最强鲁棒性 baseline 接近；
 4. 三个随机种子的提升方向一致；
 5. Qwen2.5-3B 和 7B 的结果方向一致；
 6. BERT-Attack 或 DeepWordBug 至少一种具有稳定提升。
@@ -823,4 +822,4 @@ grep "round=" run_logs/<log-file> | tail
 
 ## 21. 当前状态
 
-旧实验结果已经删除。新的正式实验尚未运行，因此现在没有可以写入论文的结果，也不能预先声称 FedEAT-Tail 优于任何 baseline。
+旧实验结果已经删除。新的正式实验尚未运行，因此现在没有可以写入论文的结果，也不能预先声称 FedRDA 优于任何 baseline。

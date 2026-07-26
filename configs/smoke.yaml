@@ -33,7 +33,7 @@ attack:
   random_start: false
 
 federated:
-  algorithm: fedeat_tail
+  algorithm: fedrda
   rounds: 1
   local_epochs: 1
   batch_size: 8

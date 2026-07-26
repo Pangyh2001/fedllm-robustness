@@ -5,7 +5,7 @@ CONFIG=${1:-configs/agnews_qwen3b.yaml}
 GPU=${2:-0}
 PYTHON_BIN=${PYTHON_BIN:-/data/yhpang/miniconda3/envs/fedllm/bin/python3.12}
 SEEDS=${SEEDS:-"42 43 44"}
-METHODS=${METHODS:-"fedavg fedpgd calfat sfat qfedavg_eat fedeat fedeat_tail"}
+METHODS=${METHODS:-"fedavg fedpgd calfat sfat qfedavg_eat fedrda"}
 SUITE_NAME=${SUITE_NAME:-agnews_alpha01}
 
 mkdir -p run_logs

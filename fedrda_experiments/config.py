@@ -49,7 +49,7 @@ class AttackConfig:
 
 @dataclass
 class FederatedConfig:
-    algorithm: str = "fedeat_tail"
+    algorithm: str = "fedrda"
     rounds: int = 50
     local_epochs: int = 1
     batch_size: int = 8
