@@ -276,6 +276,8 @@ smoke test 不能证明：
 ### federated 部分
 
 - `rounds: 50`：通信轮数。
+- `max_train_batches: 50`：每个客户端每轮最多训练 50 个随机批次。所有方法使用
+  相同计算预算；这只限制每轮本地优化步数，不限制最终客户端测试集。
 - `algorithm`：默认方法，可被命令行覆盖。
 - `adv_weight`：本地鲁棒目标中的对抗损失权重。
 - `clean_consistency_weight`：clean—adversarial 一致性权重。

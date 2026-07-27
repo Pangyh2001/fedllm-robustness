@@ -36,6 +36,7 @@ federated:
   algorithm: fedrda
   rounds: 50
   local_epochs: 1
+  max_train_batches: 50
   batch_size: 4
   eval_batch_size: 8
   learning_rate: 0.0002

@@ -90,6 +90,15 @@ python run_experiment.py \
 
 完整命令、实验结果填写位置以及每项结果的解释见 [EXPERIMENTS.md](EXPERIMENTS.md)。
 
+批量执行完整实验矩阵使用：
+
+```bash
+bash scripts/run_all_experiments.sh
+```
+
+该脚本会运行 smoke test、3B 主实验、non-IID、DBPedia、7B、消融和离散文本
+攻击；已完成的结果会跳过，存在检查点的实验会自动续跑。
+
 ## 输出
 
 每次运行保存在：

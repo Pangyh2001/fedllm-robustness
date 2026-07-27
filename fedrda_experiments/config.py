@@ -52,6 +52,7 @@ class FederatedConfig:
     algorithm: str = "fedrda"
     rounds: int = 50
     local_epochs: int = 1
+    max_train_batches: int | None = 50
     batch_size: int = 8
     eval_batch_size: int = 8
     learning_rate: float = 2e-4
@@ -112,9 +113,14 @@ def parse_args() -> tuple[RunConfig, bool]:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
     parser.add_argument("--algorithm")
+    parser.add_argument("--model-name-or-path")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--run-name")
     parser.add_argument("--residual-weight", type=float)
+    parser.add_argument("--rounds", type=int)
+    parser.add_argument("--warmup-rounds", type=int)
+    parser.add_argument("--max-train-batches", type=int)
+    parser.add_argument("--eval-restarts", type=int)
     parser.add_argument("--output-dir")
     parser.add_argument("--dirichlet-alpha", type=float)
     parser.add_argument("--lora-rank", type=int)
@@ -127,12 +133,22 @@ def parse_args() -> tuple[RunConfig, bool]:
     cfg = load_config(args.config)
     if args.algorithm:
         cfg.federated.algorithm = args.algorithm
+    if args.model_name_or_path:
+        cfg.model.name_or_path = args.model_name_or_path
     if args.seed is not None:
         cfg.seed = args.seed
     if args.run_name:
         cfg.run_name = args.run_name
     if args.residual_weight is not None:
         cfg.federated.residual_weight = args.residual_weight
+    if args.rounds is not None:
+        cfg.federated.rounds = args.rounds
+    if args.warmup_rounds is not None:
+        cfg.federated.warmup_rounds = args.warmup_rounds
+    if args.max_train_batches is not None:
+        cfg.federated.max_train_batches = args.max_train_batches
+    if args.eval_restarts is not None:
+        cfg.attack.eval_restarts = args.eval_restarts
     if args.output_dir:
         cfg.output_dir = args.output_dir
     if args.dirichlet_alpha is not None:

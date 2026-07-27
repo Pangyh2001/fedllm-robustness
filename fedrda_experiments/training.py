@@ -60,10 +60,16 @@ def local_update(
             random_start=attack_cfg.random_start,
         )
     losses = []
+    batches_seen = 0
     started = time.perf_counter()
     model.train()
     for _ in range(fed_cfg.local_epochs):
         for raw_batch in loader:
+            if (
+                fed_cfg.max_train_batches is not None
+                and batches_seen >= fed_cfg.max_train_batches
+            ):
+                break
             batch = _batch_to_device(raw_batch, device)
             optimizer.zero_grad(set_to_none=True)
             if objective == "clean":
@@ -120,6 +126,12 @@ def local_update(
             )
             optimizer.step()
             losses.append(float(loss.detach()))
+            batches_seen += 1
+        if (
+            fed_cfg.max_train_batches is not None
+            and batches_seen >= fed_cfg.max_train_batches
+        ):
+            break
     final_state = trainable_state(model)
     update = subtract(final_state, initial_state)
     elapsed = time.perf_counter() - started
@@ -130,7 +142,7 @@ def local_update(
     return update, {
         "objective": objective,
         "loss": float(sum(losses) / max(len(losses), 1)),
-        "num_batches": len(loader) * fed_cfg.local_epochs,
+        "num_batches": batches_seen,
         "elapsed_sec": elapsed,
         "peak_gpu_memory_mb": peak_memory,
     }

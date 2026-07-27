@@ -19,6 +19,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
     parser.add_argument("--run-dir", required=True)
+    parser.add_argument("--model-name-or-path")
     parser.add_argument(
         "--attacks",
         nargs="+",
@@ -68,6 +69,8 @@ def main():
         ) from error
 
     cfg = load_config(args.config)
+    if args.model_name_or_path:
+        cfg.model.name_or_path = args.model_name_or_path
     run_dir = Path(args.run_dir)
     model, tokenizer = load_trained_model(cfg, run_dir)
     clients, _ = load_federated_data(cfg.data, tokenizer, cfg.seed)
