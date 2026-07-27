@@ -145,6 +145,8 @@ class ExperimentRunner:
     def _evaluate_test(self, final_evaluation: bool):
         all_results = {}
         steps_list = sorted(set(self.cfg.attack.eval_steps))
+        if not final_evaluation:
+            steps_list = [min(steps_list)]
         for steps in steps_list:
             clients = []
             for client in self.clients:
@@ -163,7 +165,11 @@ class ExperimentRunner:
                                 if final_evaluation and steps == max(steps_list)
                                 else 1
                             ),
-                            max_batches=self.cfg.federated.max_eval_batches,
+                            max_batches=(
+                                None
+                                if final_evaluation
+                                else self.cfg.federated.max_eval_batches
+                            ),
                         ),
                     }
                 )

@@ -56,4 +56,4 @@ federated:
   qp_rho: 10.0
   qp_kappa: 0.1
   evaluate_every: 5
-  max_eval_batches: null
+  max_eval_batches: 20

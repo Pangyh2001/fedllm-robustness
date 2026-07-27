@@ -282,7 +282,9 @@ smoke test 不能证明：
 - `adv_weight`：本地鲁棒目标中的对抗损失权重。
 - `clean_consistency_weight`：clean—adversarial 一致性权重。
 - `tail_ratio: 0.2`：最差 20% 客户端视为 tail clients。
-- `evaluate_every: 5`：每五轮完整评估一次。
+- `evaluate_every: 5`：每五轮进行一次中间鲁棒监控。
+- `max_eval_batches: 20`：只限制训练期间的验证和中间监控，每个客户端最多
+  使用 20 个批次；最终评估会忽略该限制，仍使用完整客户端测试集。
 
 每次运行都会复制实际使用的完整配置到 `resolved_config.json`。论文参数以该文件为准，而不是依靠记忆。
 
