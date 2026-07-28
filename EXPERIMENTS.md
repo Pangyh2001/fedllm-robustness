@@ -270,8 +270,9 @@ smoke test 不能证明：
 
 - `epsilon`：embedding 扰动强度。
 - `train_steps: 3`：训练使用三步 PGD。
-- `eval_steps: [10, 20, 50]`：测试使用更强攻击。
-- `eval_restarts: 5`：最终强攻击使用多次随机初始化。
+- `eval_steps: [10, 20]`：最终测试同时报告 PGD-10 和更强的 PGD-20。
+- `eval_restarts: 1`：每个模型使用一次固定随机种子的攻击运行。PGD-50
+  多重启在完整客户端测试集上的成本过高，不纳入批量主实验。
 
 ### federated 部分
 
@@ -662,7 +663,7 @@ outputs/agnews_qwen3b/agnews_alpha01__fedrda__seed42/
 
 ### summary.json
 
-包含最终 PGD-10/20/50 下的汇总结果，是主表数据来源。
+包含最终 PGD-10/20 下的汇总结果，是主表数据来源。
 
 ---
 

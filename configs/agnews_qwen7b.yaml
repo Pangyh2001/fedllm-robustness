@@ -28,8 +28,8 @@ attack:
   epsilon: 0.03
   epsilon_mode: relative_rms
   train_steps: 3
-  eval_steps: [10, 20, 50]
-  eval_restarts: 5
+  eval_steps: [10, 20]
+  eval_restarts: 1
   random_start: true
 
 federated:
