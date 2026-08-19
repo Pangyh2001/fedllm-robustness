@@ -6,6 +6,7 @@ import torch
 from fedrda_experiments.aggregation import (
     fedrda_residual,
     qfedavg_update,
+    risk_aware_update,
     residual_diagnostics,
     sfat_update,
     tail_reweighted_residual,
@@ -79,6 +80,20 @@ class AggregationTests(unittest.TestCase):
         )
         self.assertGreater(flatten(result)[1], flatten(result)[0])
         self.assertGreater(metrics["denominator"], 0)
+
+    def test_risk_aware_update_emphasizes_weak_client(self):
+        result, metrics = risk_aware_update(
+            [state([1.0, 0.0]), state([0.0, 1.0])],
+            [0.5, 0.5],
+            [0, 1],
+            {0: 0.2, 1: 1.0},
+            {1},
+            temperature=1.0,
+            tail_multiplier=2.0,
+            weight_cap=3.0,
+        )
+        self.assertGreater(metrics["weights"][1], metrics["weights"][0])
+        self.assertGreater(flatten(result)[1], flatten(result)[0])
 
 
 if __name__ == "__main__":

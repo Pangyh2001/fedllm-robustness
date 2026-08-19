@@ -52,7 +52,9 @@ class EmbeddingPGD:
         clean = embed_layer(input_ids).detach()
         budget = self._budget(clean, attention_mask)
         mask = attention_mask.unsqueeze(-1).to(clean.dtype)
-        if self.random_start and self.steps > 1:
+        # Random-start FGSM avoids always linearizing at the clean embedding and
+        # is the inexpensive training attack used by the efficient protocol.
+        if self.random_start:
             delta = torch.empty_like(clean).uniform_(-1, 1) * budget * mask
         else:
             delta = torch.zeros_like(clean)

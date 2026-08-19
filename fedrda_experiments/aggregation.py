@@ -81,6 +81,63 @@ def sfat_update(
     return weighted_sum(updates, weights), weights
 
 
+def risk_aware_update(
+    updates: list[TensorState],
+    base_weights: list[float],
+    client_ids: list[int],
+    robust_risks: dict[int, float],
+    tail_ids: set[int],
+    temperature: float,
+    tail_multiplier: float,
+    weight_cap: float,
+):
+    """Aggregate one robust update per client using smoothed validation risk.
+
+    Risks are standardized within the participating cohort so that the
+    temperature has a stable meaning across rounds. Multipliers are clipped to
+    prevent one noisy validation estimate from taking over the global update.
+    """
+    if temperature <= 0:
+        raise ValueError("temperature must be positive")
+    if weight_cap < 1:
+        raise ValueError("weight_cap must be >= 1")
+    if tail_multiplier <= 0:
+        raise ValueError("tail_multiplier must be positive")
+    if not (
+        len(updates) == len(base_weights) == len(client_ids)
+        and len(updates) > 0
+    ):
+        raise ValueError("updates, base_weights, and client_ids must align")
+
+    available = [float(value) for value in robust_risks.values()]
+    fallback = float(np.mean(available)) if available else 0.0
+    risks = np.asarray(
+        [float(robust_risks.get(client_id, fallback)) for client_id in client_ids],
+        dtype=np.float64,
+    )
+    risk_std = float(risks.std())
+    standardized = (
+        (risks - float(risks.mean())) / max(risk_std, 1e-8)
+        if len(risks) > 1
+        else np.zeros_like(risks)
+    )
+    multipliers = np.exp(np.clip(standardized / temperature, -3.0, 3.0))
+    multipliers = np.clip(multipliers, 1.0 / weight_cap, weight_cap)
+    multipliers *= np.asarray(
+        [tail_multiplier if client_id in tail_ids else 1.0 for client_id in client_ids],
+        dtype=np.float64,
+    )
+    raw_weights = np.asarray(base_weights, dtype=np.float64) * multipliers
+    normalized = (raw_weights / raw_weights.sum()).tolist()
+    return weighted_sum(updates, normalized), {
+        "client_ids": list(client_ids),
+        "robust_risks": risks.tolist(),
+        "standardized_risks": standardized.tolist(),
+        "multipliers": multipliers.tolist(),
+        "weights": normalized,
+    }
+
+
 def qfedavg_update(
     updates: list[TensorState],
     losses: list[float],

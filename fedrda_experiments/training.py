@@ -204,7 +204,9 @@ def evaluate_dataset(
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     model.eval()
     clean_correct = 0
+    clean_loss_sum = 0.0
     robust_correct = 0
+    robust_loss_sum = 0.0
     attacked_clean_correct = 0
     total = 0
     attack = None
@@ -229,8 +231,12 @@ def evaluate_dataset(
                 attention_mask=batch["attention_mask"],
             ).logits.float()
         clean_predictions = clean_logits.argmax(dim=-1)
+        clean_losses = F.cross_entropy(
+            clean_logits, batch["labels"], reduction="none"
+        )
         clean_mask = clean_predictions.eq(batch["labels"])
         clean_correct += int(clean_mask.sum())
+        clean_loss_sum += float(clean_losses.sum())
         total += batch["labels"].numel()
         if attack is None:
             continue
@@ -253,6 +259,7 @@ def evaluate_dataset(
             worst_loss = torch.where(replace, losses, worst_loss)
             worst_predictions = torch.where(replace, logits.argmax(dim=-1), worst_predictions)
         robust_correct += int(worst_predictions.eq(batch["labels"]).sum())
+        robust_loss_sum += float(worst_loss.sum())
         attacked_clean_correct += int(
             (worst_predictions.eq(batch["labels"]) & clean_mask).sum()
         )
@@ -262,12 +269,14 @@ def evaluate_dataset(
         "num_examples": total,
         "clean_correct": clean_correct,
         "clean_accuracy": clean_correct / total,
+        "clean_loss": clean_loss_sum / total,
     }
     if attack is not None:
         result.update(
             {
                 "robust_accuracy": robust_correct / total,
                 "robust_correct": robust_correct,
+                "robust_loss": robust_loss_sum / total,
                 "attacked_clean_correct": attacked_clean_correct,
                 "conditional_asr": (
                     1.0 - attacked_clean_correct / clean_correct

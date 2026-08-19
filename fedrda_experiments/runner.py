@@ -15,6 +15,7 @@ from .aggregation import (
     average_residual,
     fedrda_residual,
     qfedavg_update,
+    risk_aware_update,
     residual_diagnostics,
     sfat_update,
 )
@@ -124,12 +125,15 @@ class ExperimentRunner:
                 client.validation,
                 self.device,
                 self.cfg.federated.eval_batch_size,
-                attack_cfg=self.cfg.attack,
-                attack_steps=self.cfg.attack.train_steps,
+                attack_cfg=self.eval_attack_cfg,
+                attack_steps=self.cfg.federated.tail_eval_steps,
                 restarts=1,
-                max_batches=self.cfg.federated.max_eval_batches,
+                max_batches=self.cfg.federated.tail_eval_batches,
             )
-            score = metrics["clean_accuracy"] - metrics["robust_accuracy"]
+            # Directly optimize the quantity that identifies weak clients.
+            # The legacy clean--robust gap could miss clients whose clean and
+            # robust accuracies were both low.
+            score = metrics["robust_loss"]
             previous = self.vulnerability_ema.get(client.client_id)
             ema = (
                 score
@@ -158,7 +162,7 @@ class ExperimentRunner:
                             client.test,
                             self.device,
                             self.cfg.federated.eval_batch_size,
-                            attack_cfg=self.cfg.attack,
+                            attack_cfg=self.eval_attack_cfg,
                             attack_steps=steps,
                             restarts=(
                                 self.cfg.attack.eval_restarts
@@ -166,7 +170,7 @@ class ExperimentRunner:
                                 else 1
                             ),
                             max_batches=(
-                                None
+                                self.cfg.federated.final_eval_batches
                                 if final_evaluation
                                 else self.cfg.federated.max_eval_batches
                             ),
@@ -198,11 +202,31 @@ class ExperimentRunner:
     def run(self):
         self._prepare()
         cfg = self.cfg.federated
+        self.eval_attack_cfg = dataclasses.replace(
+            self.cfg.attack,
+            epsilon=(
+                self.cfg.attack.eval_epsilon
+                if self.cfg.attack.eval_epsilon is not None
+                else self.cfg.attack.epsilon
+            ),
+        )
         for round_index in range(self.start_round, cfg.rounds):
             round_started = time.perf_counter()
             load_trainable_state(self.model, self.global_state)
-            if cfg.algorithm == "fedrda":
+            refresh_tail = (
+                cfg.algorithm == "fedrda"
+                and (
+                    not self.vulnerability_ema
+                    or round_index % cfg.tail_refresh_every == 0
+                )
+            )
+            if refresh_tail:
                 raw_vulnerability, validation_metrics = self._validation_vulnerability()
+                tail_ids = select_tail_clients(
+                    self.vulnerability_ema, self.cfg.federated.tail_ratio
+                )
+            elif cfg.algorithm == "fedrda":
+                raw_vulnerability, validation_metrics = {}, {}
                 tail_ids = select_tail_clients(
                     self.vulnerability_ema, self.cfg.federated.tail_ratio
                 )
@@ -224,30 +248,22 @@ class ExperimentRunner:
                 robust_update = None
                 client_record = {"client_id": client.client_id}
                 if cfg.algorithm == "fedrda":
-                    clean_update, metrics = local_update(
-                        self.model,
-                        client.train,
-                        self.global_state,
-                        "clean",
-                        cfg,
-                        self.cfg.attack,
-                        self.device,
-                        branch_seed,
-                    )
-                    clean_updates.append(clean_update)
-                    client_record["clean_branch"] = metrics
                     robust_update, metrics = local_update(
                         self.model,
                         client.train,
                         self.global_state,
-                        "eat",
+                        # Use exactly the same local adversarial objective as
+                        # FedPGD/SFAT. Any gain is therefore attributable to
+                        # server-side robust-risk aggregation.
+                        "pgd",
                         cfg,
                         self.cfg.attack,
                         self.device,
                         branch_seed,
                     )
                     robust_updates.append(robust_update)
-                    client_record["robust_branch"] = metrics
+                    single_updates.append(robust_update)
+                    client_record["local_update"] = metrics
                 else:
                     objective = {
                         "fedavg": "clean",
@@ -284,20 +300,6 @@ class ExperimentRunner:
                     )
                     single_updates.append(robust_update)
                     client_record["local_update"] = metrics
-                if cfg.algorithm == "fedrda":
-                    residual = {
-                        name: robust_update[name] - clean_update[name]
-                        for name in clean_update
-                    }
-                    beta = cfg.residual_ema
-                    if client.client_id in self.residual_ema and beta > 0:
-                        residual = {
-                            name: beta * self.residual_ema[client.client_id][name]
-                            + (1 - beta) * value
-                            for name, value in residual.items()
-                        }
-                    self.residual_ema[client.client_id] = residual
-                    residuals.append(residual)
                 local_metrics.append(client_record)
 
             aggregation_metrics = {}
@@ -331,27 +333,26 @@ class ExperimentRunner:
                 global_update = weighted_sum(single_updates, weights)
                 aggregation_metrics["aggregator"] = "sample_weighted_average"
             else:
-                clean_average = weighted_sum(clean_updates, weights)
-                diagnostics = residual_diagnostics(residuals, weights)
-                aggregation_metrics["residual_diagnostics"] = dataclasses.asdict(diagnostics)
                 client_ids = [client.client_id for client in selected]
                 if round_index < cfg.warmup_rounds:
-                    robust_correction = average_residual(residuals, weights)
-                    aggregation_metrics["aggregator"] = "average_residual"
+                    global_update = weighted_sum(single_updates, weights)
+                    aggregation_metrics.update(
+                        {"aggregator": "robust_warmup_average", "weights": weights}
+                    )
                 else:
-                    robust_correction, qp_metrics = fedrda_residual(
-                        residuals,
+                    global_update, risk_metrics = risk_aware_update(
+                        single_updates,
                         weights,
                         client_ids,
+                        self.vulnerability_ema,
                         tail_ids,
-                        cfg.qp_rho,
-                        cfg.qp_kappa,
+                        cfg.risk_temperature,
+                        cfg.tail_reweight,
+                        cfg.risk_weight_cap,
                     )
-                    aggregation_metrics["aggregator"] = "tail_constrained_residual"
-                    aggregation_metrics["qp"] = qp_metrics
-                global_update = add(
-                    clean_average, scale(robust_correction, cfg.residual_weight)
-                )
+                    aggregation_metrics.update(
+                        {"aggregator": "robust_risk_aware", **risk_metrics}
+                    )
             self.global_state = add(self.global_state, global_update)
             load_trainable_state(self.model, self.global_state)
 

@@ -1,0 +1,68 @@
+seed: 42
+output_dir: outputs_v2/agnews_qwen3b
+run_name: agnews_alpha01_v2pilot
+device: cuda
+
+data:
+  name: agnews
+  cache_dir: null
+  max_train_samples: null
+  max_test_samples: null
+  max_length: 256
+  num_clients: 10
+  dirichlet_alpha: 0.1
+  partition_mode: label_skew_equal
+  val_fraction: 0.1
+  min_client_samples: 64
+  min_client_test_samples: 100
+
+model:
+  name_or_path: Qwen/Qwen2.5-3B-Instruct
+  lora_rank: 8
+  lora_alpha: 16
+  lora_dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj]
+  dtype: bfloat16
+
+attack:
+  epsilon: 0.03
+  eval_epsilon: 0.05
+  epsilon_mode: relative_rms
+  train_steps: 3
+  eval_steps: [10]
+  eval_restarts: 1
+  random_start: true
+
+federated:
+  algorithm: fedrda
+  rounds: 20
+  local_epochs: 1
+  # Batch 4 fits alongside existing jobs; 50 batches preserves the same
+  # 200 examples/client/round budget as batch 8 x 25.
+  max_train_batches: 50
+  batch_size: 4
+  eval_batch_size: 4
+  learning_rate: 0.0002
+  client_fraction: 1.0
+  adv_weight: 0.5
+  clean_consistency_weight: 0.1
+  calfat_tau: 0.1
+  sfat_top_k: 1
+  sfat_multiplier: 1.4
+  qfed_q: 1.0
+  warmup_rounds: 2
+  residual_weight: 1.0
+  residual_ema: 0.0
+  vulnerability_ema: 0.7
+  tail_ratio: 0.2
+  tail_reweight: 2.0
+  tail_refresh_every: 2
+  tail_eval_steps: 3
+  tail_eval_batches: 4
+  risk_temperature: 0.7
+  risk_weight_cap: 3.0
+  qp_rho: 10.0
+  qp_kappa: 0.1
+  evaluate_every: 5
+  max_eval_batches: 4
+  final_eval_batches: 10

@@ -39,6 +39,7 @@ class ModelConfig:
 @dataclass
 class AttackConfig:
     epsilon: float = 0.03
+    eval_epsilon: float | None = None
     epsilon_mode: str = "relative_rms"
     train_steps: int = 3
     eval_steps: list[int] = field(default_factory=lambda: [1, 10, 20])
@@ -69,10 +70,16 @@ class FederatedConfig:
     vulnerability_ema: float = 0.9
     tail_ratio: float = 0.2
     tail_reweight: float = 2.0
+    tail_refresh_every: int = 1
+    tail_eval_steps: int = 1
+    tail_eval_batches: int | None = None
+    risk_temperature: float = 1.0
+    risk_weight_cap: float = 3.0
     qp_rho: float = 10.0
     qp_kappa: float = 0.1
     evaluate_every: int = 1
     max_eval_batches: int | None = None
+    final_eval_batches: int | None = None
 
 
 @dataclass
