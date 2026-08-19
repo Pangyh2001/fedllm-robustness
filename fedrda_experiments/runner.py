@@ -126,15 +126,18 @@ class ExperimentRunner:
                 client.validation,
                 self.device,
                 self.cfg.federated.eval_batch_size,
-                attack_cfg=self.eval_attack_cfg,
+                # Tail identification should remain discriminative. The
+                # stronger test epsilon can collapse all early validation
+                # accuracies to zero and produce an arbitrary ranking.
+                attack_cfg=self.cfg.attack,
                 attack_steps=self.cfg.federated.tail_eval_steps,
                 restarts=1,
                 max_batches=self.cfg.federated.tail_eval_batches,
             )
-            # Directly optimize the quantity that identifies weak clients.
-            # The legacy clean--robust gap could miss clients whose clean and
+            # Directly rank the quantity reported as tail robustness. The
+            # legacy clean--robust gap could miss clients whose clean and
             # robust accuracies were both low.
-            score = metrics["robust_loss"]
+            score = 1.0 - metrics["robust_accuracy"]
             previous = self.vulnerability_ema.get(client.client_id)
             ema = (
                 score
@@ -216,6 +219,7 @@ class ExperimentRunner:
             load_trainable_state(self.model, self.global_state)
             refresh_tail = (
                 cfg.algorithm == "fedrda"
+                and round_index >= cfg.warmup_rounds
                 and (
                     not self.vulnerability_ema
                     or round_index % cfg.tail_refresh_every == 0
@@ -226,7 +230,7 @@ class ExperimentRunner:
                 tail_ids = select_tail_clients(
                     self.vulnerability_ema, self.cfg.federated.tail_ratio
                 )
-            elif cfg.algorithm == "fedrda":
+            elif cfg.algorithm == "fedrda" and round_index >= cfg.warmup_rounds:
                 raw_vulnerability, validation_metrics = {}, {}
                 tail_ids = select_tail_clients(
                     self.vulnerability_ema, self.cfg.federated.tail_ratio
@@ -249,16 +253,6 @@ class ExperimentRunner:
                 robust_update = None
                 client_record = {"client_id": client.client_id}
                 if cfg.algorithm == "fedrda":
-                    clean_update, clean_metrics = local_update(
-                        self.model,
-                        client.train,
-                        self.global_state,
-                        "clean",
-                        cfg,
-                        self.cfg.attack,
-                        self.device,
-                        branch_seed,
-                    )
                     robust_update, metrics = local_update(
                         self.model,
                         client.train,
@@ -272,6 +266,28 @@ class ExperimentRunner:
                         self.device,
                         branch_seed,
                     )
+                    if round_index >= cfg.warmup_rounds:
+                        clean_update, clean_metrics = local_update(
+                            self.model,
+                            client.train,
+                            self.global_state,
+                            "clean",
+                            cfg,
+                            self.cfg.attack,
+                            self.device,
+                            branch_seed,
+                        )
+                    else:
+                        # Warmup is exactly FedPGD. Avoid an unused second local
+                        # branch and construct a zero correction explicitly.
+                        clean_update = robust_update
+                        clean_metrics = {
+                            "objective": "skipped_during_fedpgd_warmup",
+                            "loss": metrics["loss"],
+                            "num_batches": 0,
+                            "elapsed_sec": 0.0,
+                            "peak_gpu_memory_mb": metrics["peak_gpu_memory_mb"],
+                        }
                     robust_updates.append(robust_update)
                     clean_updates.append(clean_update)
                     residuals.append(subtract(robust_update, clean_update))
@@ -361,6 +377,9 @@ class ExperimentRunner:
                         residuals,
                         weights,
                         client_ids,
+                        # Risk history starts only after warmup, so a direct
+                        # robust-error ranking reacts to the current weak
+                        # clients instead of being locked by random-head loss.
                         self.vulnerability_ema,
                         tail_ids,
                         cfg.risk_temperature,

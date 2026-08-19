@@ -52,13 +52,13 @@ federated:
   sfat_top_k: 2
   sfat_multiplier: 1.4
   qfed_q: 1.0
-  warmup_rounds: 1
+  warmup_rounds: 3
   residual_weight: 1.0
   # The risk-aware correction may be at most 25% of the clean update norm.
   # The underlying FedPGD update itself is never clipped.
   residual_norm_cap: 0.25
   residual_ema: 0.0
-  vulnerability_ema: 0.8
+  vulnerability_ema: 0.0
   tail_ratio: 0.2
   tail_reweight: 1.25
   tail_refresh_every: 1
