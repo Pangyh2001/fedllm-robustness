@@ -66,6 +66,7 @@ class FederatedConfig:
     qfed_q: float = 1.0
     warmup_rounds: int = 5
     residual_weight: float = 1.0
+    residual_norm_cap: float = 1.0
     residual_ema: float = 0.0
     vulnerability_ema: float = 0.9
     tail_ratio: float = 0.2

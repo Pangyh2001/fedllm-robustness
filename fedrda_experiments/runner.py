@@ -13,6 +13,7 @@ import torch
 
 from .aggregation import (
     average_residual,
+    clean_preserving_residual,
     fedrda_residual,
     qfedavg_update,
     risk_aware_update,
@@ -23,7 +24,7 @@ from .config import RunConfig
 from .data import dataset_spec, load_federated_data
 from .metrics import select_tail_clients, summarize_clients, summarize_conditional_asr
 from .modeling import load_model_and_tokenizer
-from .state import add, load_trainable_state, scale, trainable_state, weighted_sum
+from .state import add, load_trainable_state, scale, subtract, trainable_state, weighted_sum
 from .training import evaluate_dataset, evaluate_objective_loss, local_update
 
 
@@ -248,6 +249,16 @@ class ExperimentRunner:
                 robust_update = None
                 client_record = {"client_id": client.client_id}
                 if cfg.algorithm == "fedrda":
+                    clean_update, clean_metrics = local_update(
+                        self.model,
+                        client.train,
+                        self.global_state,
+                        "clean",
+                        cfg,
+                        self.cfg.attack,
+                        self.device,
+                        branch_seed,
+                    )
                     robust_update, metrics = local_update(
                         self.model,
                         client.train,
@@ -262,7 +273,10 @@ class ExperimentRunner:
                         branch_seed,
                     )
                     robust_updates.append(robust_update)
+                    clean_updates.append(clean_update)
+                    residuals.append(subtract(robust_update, clean_update))
                     single_updates.append(robust_update)
+                    client_record["clean_update"] = clean_metrics
                     client_record["local_update"] = metrics
                 else:
                     objective = {
@@ -311,6 +325,7 @@ class ExperimentRunner:
                     cfg.sfat_top_k,
                     cfg.sfat_multiplier,
                     use_slack=round_index > 0,
+                    base_weights=weights,
                 )
                 aggregation_metrics.update(
                     {
@@ -334,14 +349,14 @@ class ExperimentRunner:
                 aggregation_metrics["aggregator"] = "sample_weighted_average"
             else:
                 client_ids = [client.client_id for client in selected]
+                clean_global_update = weighted_sum(clean_updates, weights)
                 if round_index < cfg.warmup_rounds:
-                    global_update = weighted_sum(single_updates, weights)
-                    aggregation_metrics.update(
-                        {"aggregator": "robust_warmup_average", "weights": weights}
-                    )
+                    robust_residual = weighted_sum(residuals, weights)
+                    residual_metrics = {"weights": weights}
+                    aggregator = "clean_plus_average_robust_residual"
                 else:
-                    global_update, risk_metrics = risk_aware_update(
-                        single_updates,
+                    robust_residual, residual_metrics = risk_aware_update(
+                        residuals,
                         weights,
                         client_ids,
                         self.vulnerability_ema,
@@ -350,9 +365,24 @@ class ExperimentRunner:
                         cfg.tail_reweight,
                         cfg.risk_weight_cap,
                     )
-                    aggregation_metrics.update(
-                        {"aggregator": "robust_risk_aware", **risk_metrics}
-                    )
+                    aggregator = "clean_plus_risk_aware_robust_residual"
+                robust_residual, preservation_metrics = clean_preserving_residual(
+                    clean_global_update,
+                    robust_residual,
+                    cfg.residual_norm_cap,
+                )
+                global_update = add(
+                    clean_global_update,
+                    scale(robust_residual, cfg.residual_weight),
+                )
+                aggregation_metrics.update(
+                    {
+                        "aggregator": aggregator,
+                        "residual_weight": cfg.residual_weight,
+                        "residual": residual_metrics,
+                        "clean_preservation": preservation_metrics,
+                    }
+                )
             self.global_state = add(self.global_state, global_update)
             load_trainable_state(self.model, self.global_state)
 

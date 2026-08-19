@@ -68,17 +68,68 @@ def sfat_update(
     top_k: int,
     multiplier: float,
     use_slack: bool,
+    base_weights: list[float] | None = None,
 ):
-    """LoRA adaptation of the official SFAT client-wise slack aggregation."""
+    """LoRA adaptation of the official SFAT client-wise slack aggregation.
+
+    SFAT upweights clients with *smaller* adversarial training loss.  The
+    official implementation uploads a negative loss score, which makes its
+    numerically largest scores correspond to the smallest positive losses.
+    Keeping losses positive here makes the direction explicit and avoids
+    accidentally implementing the reverse-SFAT ablation.
+    """
+    if base_weights is None:
+        base_weights = [1.0 / len(updates)] * len(updates)
+    if len(base_weights) != len(updates):
+        raise ValueError("base_weights must align with updates")
     if not use_slack or top_k <= 0:
-        weights = [1.0 / len(updates)] * len(updates)
+        total = sum(base_weights)
+        weights = [weight / total for weight in base_weights]
         return weighted_sum(updates, weights), weights
     top_k = min(top_k, len(updates))
-    selected = set(np.argsort(np.asarray(losses))[-top_k:].tolist())
-    raw = [multiplier if index in selected else 1.0 for index in range(len(updates))]
+    selected = set(np.argsort(np.asarray(losses))[:top_k].tolist())
+    raw = [
+        base_weight * (multiplier if index in selected else 1.0)
+        for index, base_weight in enumerate(base_weights)
+    ]
     total = sum(raw)
     weights = [value / total for value in raw]
     return weighted_sum(updates, weights), weights
+
+
+def clean_preserving_residual(
+    clean_update: TensorState,
+    robust_residual: TensorState,
+    norm_cap: float,
+):
+    """Remove first-order clean conflict and cap the robust correction norm."""
+    if norm_cap <= 0:
+        raise ValueError("norm_cap must be positive")
+    clean_vector = flatten(clean_update)
+    residual_vector = flatten(robust_residual)
+    clean_norm = clean_vector.norm()
+    residual_norm_before = residual_vector.norm()
+    dot_before = torch.dot(clean_vector, residual_vector)
+    conflict_removed = bool(dot_before < 0 and clean_norm > 1e-12)
+    if conflict_removed:
+        residual_vector = residual_vector - (
+            dot_before / clean_vector.pow(2).sum().clamp_min(1e-12)
+        ) * clean_vector
+    cap = norm_cap * clean_norm
+    projected_norm = residual_vector.norm()
+    clipped = bool(projected_norm > cap and cap > 0)
+    if clipped:
+        residual_vector = residual_vector * (cap / projected_norm.clamp_min(1e-12))
+    dot_after = torch.dot(clean_vector, residual_vector)
+    return unflatten(residual_vector, robust_residual), {
+        "clean_update_norm": float(clean_norm),
+        "residual_norm_before": float(residual_norm_before),
+        "residual_norm_after": float(residual_vector.norm()),
+        "clean_residual_dot_before": float(dot_before),
+        "clean_residual_dot_after": float(dot_after),
+        "conflict_removed": conflict_removed,
+        "norm_clipped": clipped,
+    }
 
 
 def risk_aware_update(

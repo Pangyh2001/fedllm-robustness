@@ -4,6 +4,7 @@ from collections import OrderedDict
 import torch
 
 from fedrda_experiments.aggregation import (
+    clean_preserving_residual,
     fedrda_residual,
     qfedavg_update,
     risk_aware_update,
@@ -60,7 +61,7 @@ class AggregationTests(unittest.TestCase):
             direction = direction / direction.norm()
             self.assertGreaterEqual(torch.dot(unit, direction), -0.1001)
 
-    def test_sfat_upweights_high_loss_client(self):
+    def test_sfat_upweights_low_loss_client(self):
         result, weights = sfat_update(
             [state([1.0, 0.0]), state([0.0, 1.0])],
             [0.1, 1.0],
@@ -68,8 +69,17 @@ class AggregationTests(unittest.TestCase):
             multiplier=2.0,
             use_slack=True,
         )
-        self.assertGreater(weights[1], weights[0])
-        self.assertGreater(flatten(result)[1], flatten(result)[0])
+        self.assertGreater(weights[0], weights[1])
+        self.assertGreater(flatten(result)[0], flatten(result)[1])
+
+    def test_clean_preserving_residual_removes_conflict(self):
+        result, metrics = clean_preserving_residual(
+            state([1.0, 0.0]),
+            state([-1.0, 1.0]),
+            norm_cap=2.0,
+        )
+        self.assertTrue(metrics["conflict_removed"])
+        self.assertGreaterEqual(torch.dot(flatten(result), torch.tensor([1.0, 0.0])), 0)
 
     def test_qfedavg_emphasizes_high_loss_update(self):
         result, metrics = qfedavg_update(

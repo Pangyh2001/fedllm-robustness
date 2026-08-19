@@ -1,0 +1,72 @@
+seed: 42
+output_dir: outputs_screen/agnews_qwen3b
+run_name: agnews_residual_screen_eps075
+device: cuda
+
+data:
+  name: agnews
+  cache_dir: null
+  # Small but stratified screening subset. Final metrics use all 2,000 test
+  # examples (about 200 per client), not a per-client batch cap.
+  max_train_samples: 4000
+  max_test_samples: 2000
+  max_length: 256
+  num_clients: 10
+  dirichlet_alpha: 0.1
+  partition_mode: label_skew_equal
+  val_fraction: 0.1
+  min_client_samples: 64
+  min_client_test_samples: 100
+
+model:
+  name_or_path: Qwen/Qwen2.5-3B-Instruct
+  lora_rank: 8
+  lora_alpha: 16
+  lora_dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj]
+  dtype: bfloat16
+
+attack:
+  # Stronger than the previous 0.03/0.05 setting. 0.075 is deliberately
+  # reserved for evaluation so that the test attack is stronger than training.
+  epsilon: 0.05
+  eval_epsilon: 0.075
+  epsilon_mode: relative_rms
+  train_steps: 3
+  eval_steps: [10]
+  eval_restarts: 1
+  random_start: true
+
+federated:
+  algorithm: fedrda
+  rounds: 5
+  local_epochs: 1
+  max_train_batches: 10
+  batch_size: 4
+  eval_batch_size: 8
+  learning_rate: 0.0002
+  client_fraction: 1.0
+  adv_weight: 0.5
+  clean_consistency_weight: 0.1
+  calfat_tau: 0.1
+  sfat_top_k: 2
+  sfat_multiplier: 1.4
+  qfed_q: 1.0
+  warmup_rounds: 1
+  residual_weight: 1.0
+  residual_norm_cap: 1.0
+  residual_ema: 0.0
+  vulnerability_ema: 0.5
+  tail_ratio: 0.2
+  tail_reweight: 1.5
+  tail_refresh_every: 1
+  tail_eval_steps: 3
+  tail_eval_batches: null
+  risk_temperature: 1.0
+  risk_weight_cap: 2.0
+  qp_rho: 10.0
+  qp_kappa: 0.1
+  evaluate_every: 5
+  max_eval_batches: null
+  final_eval_batches: null
+
