@@ -350,12 +350,14 @@ class ExperimentRunner:
             else:
                 client_ids = [client.client_id for client in selected]
                 clean_global_update = weighted_sum(clean_updates, weights)
+                robust_global_update = weighted_sum(robust_updates, weights)
+                average_robust_residual = weighted_sum(residuals, weights)
                 if round_index < cfg.warmup_rounds:
-                    robust_residual = weighted_sum(residuals, weights)
-                    residual_metrics = {"weights": weights}
-                    aggregator = "clean_plus_average_robust_residual"
+                    risk_correction = scale(average_robust_residual, 0.0)
+                    residual_metrics = {"weights": weights, "warmup": True}
+                    aggregator = "fedpgd_warmup"
                 else:
-                    robust_residual, residual_metrics = risk_aware_update(
+                    risk_robust_residual, residual_metrics = risk_aware_update(
                         residuals,
                         weights,
                         client_ids,
@@ -365,15 +367,21 @@ class ExperimentRunner:
                         cfg.tail_reweight,
                         cfg.risk_weight_cap,
                     )
-                    aggregator = "clean_plus_risk_aware_robust_residual"
-                robust_residual, preservation_metrics = clean_preserving_residual(
+                    # Keep the mean-robust FedPGD direction intact. FedRDA only
+                    # adds the *difference* induced by risk-aware weighting.
+                    risk_correction = subtract(
+                        risk_robust_residual,
+                        average_robust_residual,
+                    )
+                    aggregator = "fedpgd_plus_tail_robust_correction"
+                risk_correction, preservation_metrics = clean_preserving_residual(
                     clean_global_update,
-                    robust_residual,
+                    risk_correction,
                     cfg.residual_norm_cap,
                 )
                 global_update = add(
-                    clean_global_update,
-                    scale(robust_residual, cfg.residual_weight),
+                    robust_global_update,
+                    scale(risk_correction, cfg.residual_weight),
                 )
                 aggregation_metrics.update(
                     {
