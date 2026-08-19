@@ -68,5 +68,6 @@ federated:
   qp_kappa: 0.1
   evaluate_every: 5
   max_eval_batches: null
-  final_eval_batches: null
-
+  # Screening only: 7 batches/client = at most 56 examples/client. Formal
+  # experiments must remove this cap and evaluate every client test example.
+  final_eval_batches: 7
