@@ -1,6 +1,28 @@
 # 已有实验结果汇总
 
-更新时间：2026-08-19
+更新时间：2026-08-21
+
+## 最新方法筛选：验证约束的尾部额外对抗步
+
+这是 seed 42 的受控筛选结果，不是论文主表。两种方法均使用 Qwen2.5-3B、AG News、
+10 个客户端、Dirichlet `alpha=0.1`、5 轮训练和相同的本地 embedding PGD-3
+（`epsilon=0.05 relative_rms`）。最终评估使用固定且跨方法一致的 PGD-10 随机起点，
+`epsilon=0.075`，每客户端 56 个样本。
+
+| 方法 | Clean (%) ↑ | Robust (%) ↑ | Worst (%) ↑ | Bottom-tail (%) ↑ | Client Std (pp) ↓ | Pooled ASR (%) ↓ |
+|---|---:|---:|---:|---:|---:|---:|
+| FedPGD | 77.14 | 41.25 | 16.07 | 17.86 | 18.46 | 46.53 |
+| FedRDA-tail-extra | **81.61** | **48.75** | **23.21** | **25.00** | **18.05** | **40.26** |
+| 改变量 | +4.46 | +7.50 | +7.14 | +7.14 | -0.41 | -6.27 |
+
+当前 FedRDA 先形成标准 FedPGD 更新，仅让验证鲁棒性最低的 bottom 客户端多训练
+10 个 batch，再验证是否接纳这段额外增量。该结果说明方向值得继续，但必须补充 seed
+43/44、完整测试集、10 轮及 7B/其他数据集实验后才能写入论文结论。
+
+结果文件：
+
+- FedPGD：`/data/yhpang/fedrda_deterministic_20260821/outputs/agnews_deterministic_eps075__fedpgd__seed42/summary.json`
+- FedRDA：`/data/yhpang/fedrda_deterministic_20260821/outputs/agnews_tail_extra_fixed_selection_eps075__fedrda__seed42/summary.json`
 
 ## 1. 统计范围
 
