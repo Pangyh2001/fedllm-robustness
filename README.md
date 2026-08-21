@@ -14,10 +14,12 @@ Embedding-space PGD 是高效的训练代理攻击，不被当作唯一的现实
 
 完整方法称为 **FedRDA**：
 
-1. 客户端从同一个全局 LoRA 状态出发，分别计算 clean 更新和鲁棒更新。
-2. 两者的差表示该客户端为了获得鲁棒性而额外需要的更新方向。
-3. 服务器在保留平均 clean 更新的基础上，对鲁棒残差进行 tail-aware 约束聚合。
-4. 聚合方向优先避免伤害当前鲁棒性最差的客户端，同时限制其偏离整体平均方向。
+1. 所有客户端执行与 FedPGD 完全相同的本地对抗训练，形成基础全局更新。
+2. 服务器用独立验证集识别当前鲁棒性最低的 bottom 客户端。
+3. 仅这些客户端继续少量对抗训练；服务器只提取额外训练相对标准 FedPGD 更新的增量，不直接放大其完整 non-IID 更新。
+4. 服务器在多个增量系数中进行强攻击验证。只有候选在 clean 约束下改善“平均鲁棒性 + bottom-tail 鲁棒性”时才采用，否则回退到 FedPGD 更新。
+
+测试阶段为每个 seed、攻击步数和客户端固定独立的 PGD 随机起点，避免不同训练代码路径消耗随机数后造成不公平比较。
 
 ## 已实现的比较方法
 
@@ -115,6 +117,14 @@ outputs/<model-and-dataset>/<run-name>__<algorithm>__seed<seed>/
 - `summary.json`：最终 clean、PGD、平均、bottom-20%、worst-client 和标准差；
 - `final_model/`：最终 LoRA adapter 和分类头；
 - `text_attack_metrics.json`：BERT-Attack/DeepWordBug 结果。
+
+对已有 checkpoint 重新进行可复现评估：
+
+```bash
+python evaluate_checkpoint.py \
+  --run-dir outputs/agnews_qwen3b/agnews_alpha01__fedrda__seed42 \
+  --output outputs/agnews_qwen3b/fedrda_seed42_deterministic.json
+```
 
 更新实验报告中的结果表：
 

@@ -66,6 +66,14 @@ federated:
   tail_eval_batches: null
   risk_temperature: 1.0
   risk_weight_cap: 2.0
+  candidate_correction_scales: [0.0, 0.5, 1.0]
+  candidate_clean_tolerance: 0.01
+  candidate_tail_weight: 0.5
+  candidate_min_gain: 0.0
+  candidate_eval_batches: null
+  # Tail clients compute a 20-batch update; only its increment beyond the
+  # standard 10-batch FedPGD update is considered by the server.
+  tail_extra_train_batches: 20
   qp_rho: 10.0
   qp_kappa: 0.1
   evaluate_every: 5

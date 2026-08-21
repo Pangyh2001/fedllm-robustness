@@ -76,6 +76,14 @@ class FederatedConfig:
     tail_eval_batches: int | None = None
     risk_temperature: float = 1.0
     risk_weight_cap: float = 3.0
+    candidate_correction_scales: list[float] = field(
+        default_factory=lambda: [0.0, 0.5, 1.0]
+    )
+    candidate_clean_tolerance: float = 0.01
+    candidate_tail_weight: float = 0.5
+    candidate_min_gain: float = 0.0
+    candidate_eval_batches: int | None = 2
+    tail_extra_train_batches: int | None = 20
     qp_rho: float = 10.0
     qp_kappa: float = 0.1
     evaluate_every: int = 1

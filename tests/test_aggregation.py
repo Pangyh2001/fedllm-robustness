@@ -105,6 +105,5 @@ class AggregationTests(unittest.TestCase):
         self.assertGreater(metrics["weights"][1], metrics["weights"][0])
         self.assertGreater(flatten(result)[1], flatten(result)[0])
 
-
 if __name__ == "__main__":
     unittest.main()

@@ -11,15 +11,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .aggregation import (
-    average_residual,
-    clean_preserving_residual,
-    fedrda_residual,
-    qfedavg_update,
-    risk_aware_update,
-    residual_diagnostics,
-    sfat_update,
-)
+from .aggregation import clean_preserving_residual, qfedavg_update, sfat_update
 from .config import RunConfig
 from .data import dataset_spec, load_federated_data
 from .metrics import select_tail_clients, summarize_clients, summarize_conditional_asr
@@ -121,6 +113,10 @@ class ExperimentRunner:
         scores = {}
         raw_metrics = {}
         for client in self.clients:
+            validation_seed = self.cfg.seed * 2_000_000 + client.client_id
+            torch.manual_seed(validation_seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(validation_seed)
             metrics = evaluate_dataset(
                 self.model,
                 client.validation,
@@ -158,6 +154,17 @@ class ExperimentRunner:
         for steps in steps_list:
             clients = []
             for client in self.clients:
+                # Evaluation randomness must be independent of the training
+                # code path so that PGD random starts are identical across
+                # algorithms and reruns.
+                evaluation_seed = (
+                    self.cfg.seed * 1_000_000
+                    + steps * 1_000
+                    + client.client_id
+                )
+                torch.manual_seed(evaluation_seed)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(evaluation_seed)
                 clients.append(
                     {
                         "client_id": client.client_id,
@@ -194,6 +201,45 @@ class ExperimentRunner:
                 ),
             }
         return all_results
+
+    def _evaluate_validation_state(self, state, max_batches: int | None):
+        """Evaluate a candidate update without changing risk-history state."""
+        load_trainable_state(self.model, state)
+        clients = []
+        for client in self.clients:
+            validation_seed = (
+                self.cfg.seed * 3_000_000
+                + self.cfg.federated.tail_eval_steps * 1_000
+                + client.client_id
+            )
+            torch.manual_seed(validation_seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(validation_seed)
+            clients.append(
+                {
+                    "client_id": client.client_id,
+                    **evaluate_dataset(
+                        self.model,
+                        client.validation,
+                        self.device,
+                        self.cfg.federated.eval_batch_size,
+                        # Candidate acceptance must match the stronger held-out
+                        # threat model, not the easier training radius.
+                        attack_cfg=self.eval_attack_cfg,
+                        attack_steps=self.cfg.federated.tail_eval_steps,
+                        restarts=1,
+                        max_batches=max_batches,
+                    ),
+                }
+            )
+        return {
+            "clean": summarize_clients(
+                clients, "clean_accuracy", self.cfg.federated.tail_ratio
+            ),
+            "robust": summarize_clients(
+                clients, "robust_accuracy", self.cfg.federated.tail_ratio
+            ),
+        }
 
     def _selected_clients(self, round_index: int):
         count = max(
@@ -238,12 +284,15 @@ class ExperimentRunner:
             else:
                 raw_vulnerability, validation_metrics, tail_ids = {}, {}, set()
             selected = self._selected_clients(round_index)
+            # FedRDA and FedPGD always share the same local attack budget.
+            # The only method-specific local work is the extra number of steps
+            # computed by clients currently identified as the robust tail.
             sample_counts = [len(client.train) for client in selected]
             weight_total = sum(sample_counts)
             weights = [count / weight_total for count in sample_counts]
-            clean_updates = []
             robust_updates = []
-            residuals = []
+            tail_extra_residuals = []
+            tail_extra_client_ids = []
             single_updates = []
             qfed_losses = []
             local_metrics = []
@@ -266,33 +315,30 @@ class ExperimentRunner:
                         self.device,
                         branch_seed,
                     )
-                    if round_index >= cfg.warmup_rounds:
-                        clean_update, clean_metrics = local_update(
+                    robust_updates.append(robust_update)
+                    if (
+                        round_index >= cfg.warmup_rounds
+                        and client.client_id in tail_ids
+                    ):
+                        extended_cfg = dataclasses.replace(
+                            cfg, max_train_batches=cfg.tail_extra_train_batches
+                        )
+                        extended_update, extended_metrics = local_update(
                             self.model,
                             client.train,
                             self.global_state,
-                            "clean",
-                            cfg,
+                            "pgd",
+                            extended_cfg,
                             self.cfg.attack,
                             self.device,
                             branch_seed,
                         )
-                    else:
-                        # Warmup is exactly FedPGD. Avoid an unused second local
-                        # branch and construct a zero correction explicitly.
-                        clean_update = robust_update
-                        clean_metrics = {
-                            "objective": "skipped_during_fedpgd_warmup",
-                            "loss": metrics["loss"],
-                            "num_batches": 0,
-                            "elapsed_sec": 0.0,
-                            "peak_gpu_memory_mb": metrics["peak_gpu_memory_mb"],
-                        }
-                    robust_updates.append(robust_update)
-                    clean_updates.append(clean_update)
-                    residuals.append(subtract(robust_update, clean_update))
+                        tail_extra_residuals.append(
+                            subtract(extended_update, robust_update)
+                        )
+                        tail_extra_client_ids.append(client.client_id)
+                        client_record["tail_extended_update"] = extended_metrics
                     single_updates.append(robust_update)
-                    client_record["clean_update"] = clean_metrics
                     client_record["local_update"] = metrics
                 else:
                     objective = {
@@ -364,50 +410,86 @@ class ExperimentRunner:
                 global_update = weighted_sum(single_updates, weights)
                 aggregation_metrics["aggregator"] = "sample_weighted_average"
             else:
-                client_ids = [client.client_id for client in selected]
-                clean_global_update = weighted_sum(clean_updates, weights)
-                robust_global_update = weighted_sum(robust_updates, weights)
-                average_robust_residual = weighted_sum(residuals, weights)
                 if round_index < cfg.warmup_rounds:
-                    risk_correction = scale(average_robust_residual, 0.0)
-                    residual_metrics = {"weights": weights, "warmup": True}
+                    global_update = weighted_sum(robust_updates, weights)
+                    residual_metrics = {
+                        "base_weights": weights,
+                        "mixed_weights": weights,
+                        "warmup": True,
+                    }
                     aggregator = "fedpgd_warmup"
                 else:
-                    risk_robust_residual, residual_metrics = risk_aware_update(
-                        residuals,
-                        weights,
-                        client_ids,
-                        # Risk history starts only after warmup, so a direct
-                        # robust-error ranking reacts to the current weak
-                        # clients instead of being locked by random-head loss.
-                        self.vulnerability_ema,
-                        tail_ids,
-                        cfg.risk_temperature,
-                        cfg.tail_reweight,
-                        cfg.risk_weight_cap,
+                    robust_global_update = weighted_sum(robust_updates, weights)
+                    if not tail_extra_residuals:
+                        raise RuntimeError("FedRDA requires at least one tail client")
+                    tail_extra_correction = weighted_sum(
+                        tail_extra_residuals,
+                        [1.0 / len(tail_extra_residuals)]
+                        * len(tail_extra_residuals),
                     )
-                    # Keep the mean-robust FedPGD direction intact. FedRDA only
-                    # adds the *difference* induced by risk-aware weighting.
-                    risk_correction = subtract(
-                        risk_robust_residual,
-                        average_robust_residual,
+                    tail_extra_correction, preservation_metrics = clean_preserving_residual(
+                        robust_global_update,
+                        tail_extra_correction,
+                        cfg.residual_norm_cap,
                     )
-                    aggregator = "fedpgd_plus_tail_robust_correction"
-                risk_correction, preservation_metrics = clean_preserving_residual(
-                    clean_global_update,
-                    risk_correction,
-                    cfg.residual_norm_cap,
-                )
-                global_update = add(
-                    robust_global_update,
-                    scale(risk_correction, cfg.residual_weight),
-                )
+                    candidate_metrics = []
+                    for correction_scale in cfg.candidate_correction_scales:
+                        if correction_scale < 0.0:
+                            raise ValueError(
+                                "candidate_correction_scales must be non-negative"
+                            )
+                        candidate_update = add(
+                            robust_global_update,
+                            scale(tail_extra_correction, correction_scale),
+                        )
+                        candidate_state = add(self.global_state, candidate_update)
+                        metrics = self._evaluate_validation_state(
+                            candidate_state, cfg.candidate_eval_batches
+                        )
+                        score = (
+                            metrics["robust"]["client_macro"]
+                            + cfg.candidate_tail_weight
+                            * metrics["robust"]["bottom_tail"]
+                        )
+                        candidate_metrics.append(
+                            {
+                                "correction_scale": float(correction_scale),
+                                "update": candidate_update,
+                                "metrics": metrics,
+                                "score": float(score),
+                            }
+                        )
+                    base_candidate = min(
+                        candidate_metrics,
+                        key=lambda item: abs(item["correction_scale"]),
+                    )
+                    eligible = [
+                        item
+                        for item in candidate_metrics
+                        if item["metrics"]["clean"]["client_macro"]
+                        >= base_candidate["metrics"]["clean"]["client_macro"]
+                        - cfg.candidate_clean_tolerance
+                        and item["score"]
+                        >= base_candidate["score"] + cfg.candidate_min_gain
+                    ]
+                    chosen = max(
+                        eligible or [base_candidate], key=lambda item: item["score"]
+                    )
+                    global_update = chosen.pop("update")
+                    for item in candidate_metrics:
+                        item.pop("update", None)
+                    residual_metrics = {
+                        "base_weights": weights,
+                        "tail_extra_client_ids": tail_extra_client_ids,
+                        "candidate_metrics": candidate_metrics,
+                        "chosen_correction_scale": chosen["correction_scale"],
+                        "clean_preservation": preservation_metrics,
+                    }
+                    aggregator = "validation_constrained_tail_extra_steps"
                 aggregation_metrics.update(
                     {
                         "aggregator": aggregator,
-                        "residual_weight": cfg.residual_weight,
                         "residual": residual_metrics,
-                        "clean_preservation": preservation_metrics,
                     }
                 )
             self.global_state = add(self.global_state, global_update)

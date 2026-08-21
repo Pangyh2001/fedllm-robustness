@@ -300,7 +300,7 @@ smoke test 不能证明：
 - `calfat`：处理 label-skew 的校准对抗训练。
 - `sfat`：处理对抗训练加剧的客户端异构性。
 - `qfedavg_eat`：q-FedAvg 客户端公平优化与 EAT 鲁棒目标的组合。
-- `fedrda`：完整方法，同时优化平均鲁棒性、尾部客户端鲁棒性和 clean performance。
+- `fedrda`：在 FedPGD 主更新上，仅提取尾部客户端额外对抗步的增量，并通过强攻击验证选择增量系数；无合格候选时回退 FedPGD。
 
 ### 8.2 推荐的后台运行方式
 
@@ -528,18 +528,10 @@ FedAvg、FedPGD、CalFAT、SFAT、q-FedAvg-EAT、FedRDA
 
 消融实验只在 Qwen2.5-3B + AG News 上进行，使用 seed 42、43、44。
 
-### 13.1 去掉 clean consistency
+### 13.1 去掉候选验证约束
 
-```bash
-$PYTHON_BIN run_experiment.py \
-  --config configs/agnews_qwen3b.yaml \
-  --algorithm fedrda \
-  --seed 42 \
-  --clean-consistency-weight 0 \
-  --run-name ablation_no_consistency
-```
-
-检查 clean performance 是否明显下降。
+复制正式配置，将 `candidate_correction_scales` 只保留一个非零系数，例如
+`[1.0]`。这会强制采用尾部增量，用来检验验证约束是否阻止有害更新。
 
 ### 13.2 去掉 tail 保护
 
@@ -549,7 +541,7 @@ $PYTHON_BIN run_experiment.py \
 warmup_rounds: 50
 ```
 
-此时服务器始终使用平均鲁棒残差，不执行 tail 约束。run name 使用：
+此时所有轮次都走 FedPGD warmup，不识别尾部客户端，也不执行额外对抗步。run name 使用：
 
 ```text
 ablation_no_tail
